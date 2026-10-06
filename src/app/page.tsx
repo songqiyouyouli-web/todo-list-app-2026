@@ -14,9 +14,55 @@ import {
 
 const UNDO_DURATION = 5000;
 
+function formatDueBadge(todo: Todo): { label: string; className: string } | null {
+  if (!todo.dueDate) return null;
+  const due = new Date(todo.dueDate);
+  if (Number.isNaN(due.getTime())) return null;
+
+  const formatted = due.toLocaleString("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (todo.completed) {
+    return {
+      label: formatted,
+      className: "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-600",
+    };
+  }
+
+  const now = new Date();
+  const isOverdue = due.getTime() < now.getTime();
+  const isToday =
+    due.getFullYear() === now.getFullYear() &&
+    due.getMonth() === now.getMonth() &&
+    due.getDate() === now.getDate();
+
+  if (isOverdue) {
+    return {
+      label: `期限切れ ・ ${formatted}`,
+      className: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400",
+    };
+  }
+  if (isToday) {
+    const time = due.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    return {
+      label: `本日 ${time} まで`,
+      className: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+    };
+  }
+  return {
+    label: `${formatted} まで`,
+    className: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  };
+}
+
 export default function Home() {
   const todos = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [input, setInput] = useState("");
+  const [dueDateInput, setDueDateInput] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{
     todo: Todo;
     index: number;
@@ -33,8 +79,9 @@ export default function Home() {
     e.preventDefault();
     const text = input.trim();
     if (!text) return;
-    addTodo(text);
+    addTodo(text, dueDateInput || undefined);
     setInput("");
+    setDueDateInput("");
   }
 
   function handleDelete(id: string) {
@@ -58,22 +105,42 @@ export default function Home() {
   }
 
   const remaining = todos.filter((t) => !t.completed).length;
+  const completedCount = todos.length - remaining;
+  const completionPercent =
+    todos.length === 0 ? 0 : Math.round((completedCount / todos.length) * 100);
 
   return (
     <div className="flex flex-1 flex-col items-center bg-white px-6 py-12 dark:bg-black sm:py-20">
       <div className="flex w-full max-w-lg flex-col gap-6">
-        <header className="flex flex-col gap-1">
+        <header className="flex flex-col gap-3">
           <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
             ToDo リスト
           </h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            {todos.length === 0
-              ? "タスクを追加して始めましょう"
-              : `残り ${remaining} 件 / 全 ${todos.length} 件`}
-          </p>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-sm text-zinc-600 dark:text-zinc-400">
+              <span>
+                {todos.length === 0
+                  ? "タスクを追加して始めましょう"
+                  : `残り ${remaining} 件 / 全 ${todos.length} 件`}
+              </span>
+              {todos.length > 0 && (
+                <span className="font-medium text-zinc-950 dark:text-zinc-50">
+                  {completionPercent}%
+                </span>
+              )}
+            </div>
+            {todos.length > 0 && (
+              <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                <div
+                  className="h-full rounded-full bg-zinc-950 transition-all duration-300 dark:bg-zinc-50"
+                  style={{ width: `${completionPercent}%` }}
+                />
+              </div>
+            )}
+          </div>
         </header>
 
-        <form onSubmit={handleAdd} className="flex gap-2">
+        <form onSubmit={handleAdd} className="flex flex-wrap gap-2">
           <label htmlFor="new-todo" className="sr-only">
             新しいタスク
           </label>
@@ -83,7 +150,17 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="タスクを入力..."
-            className="h-11 flex-1 rounded-lg border border-black/[.12] bg-white px-4 text-base text-zinc-950 outline-none transition-colors focus:border-zinc-950 dark:border-white/[.18] dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-50"
+            className="h-11 min-w-[140px] flex-1 rounded-lg border border-black/[.12] bg-white px-4 text-base text-zinc-950 outline-none transition-colors focus:border-zinc-950 dark:border-white/[.18] dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-50"
+          />
+          <label htmlFor="new-todo-due" className="sr-only">
+            期限日時
+          </label>
+          <input
+            id="new-todo-due"
+            type="datetime-local"
+            value={dueDateInput}
+            onChange={(e) => setDueDateInput(e.target.value)}
+            className="h-11 shrink-0 rounded-lg border border-black/[.12] bg-white px-3 text-sm text-zinc-950 outline-none transition-colors [color-scheme:light] focus:border-zinc-950 dark:border-white/[.18] dark:bg-zinc-900 dark:text-zinc-50 dark:[color-scheme:dark] dark:focus:border-zinc-50"
           />
           <button
             type="submit"
@@ -107,49 +184,63 @@ export default function Home() {
 
         {todos.length > 0 && (
           <ul className="flex flex-col gap-2">
-            {todos.map((todo) => (
-              <li
-                key={todo.id}
-                className="flex items-center gap-3 rounded-lg border border-black/[.08] bg-white px-4 py-3 dark:border-white/[.1] dark:bg-zinc-900"
-              >
-                <input
-                  type="checkbox"
-                  checked={todo.completed}
-                  onChange={() => toggleTodo(todo.id)}
-                  aria-label={`${todo.text} を完了にする`}
-                  className="h-5 w-5 shrink-0 cursor-pointer accent-zinc-950 dark:accent-zinc-50"
-                />
-                <span
-                  className={`flex-1 break-words text-base ${
-                    todo.completed
-                      ? "text-zinc-400 line-through dark:text-zinc-600"
-                      : "text-zinc-950 dark:text-zinc-50"
-                  }`}
+            {todos.map((todo) => {
+              const dueBadge = formatDueBadge(todo);
+              return (
+                <li
+                  key={todo.id}
+                  className="flex flex-col gap-2 rounded-lg border border-black/[.08] bg-white px-4 py-3 dark:border-white/[.1] dark:bg-zinc-900"
                 >
-                  {todo.text}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(todo.id)}
-                  aria-label={`${todo.text} を削除する`}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    className="h-5 w-5"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 7h12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={todo.completed}
+                      onChange={() => toggleTodo(todo.id)}
+                      aria-label={`${todo.text} を完了にする`}
+                      className="h-5 w-5 shrink-0 cursor-pointer accent-zinc-950 dark:accent-zinc-50"
                     />
-                  </svg>
-                </button>
-              </li>
-            ))}
+                    <span
+                      className={`flex-1 break-words text-base ${
+                        todo.completed
+                          ? "text-zinc-400 line-through dark:text-zinc-600"
+                          : "text-zinc-950 dark:text-zinc-50"
+                      }`}
+                    >
+                      {todo.text}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(todo.id)}
+                      aria-label={`${todo.text} を削除する`}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        className="h-5 w-5"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 7h12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  {dueBadge && (
+                    <div className="pl-8">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${dueBadge.className}`}
+                      >
+                        {dueBadge.label}
+                      </span>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

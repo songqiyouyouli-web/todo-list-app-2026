@@ -2,6 +2,7 @@ export type Todo = {
   id: string;
   text: string;
   completed: boolean;
+  dueDate?: string;
 };
 
 const STORAGE_KEY = "todo-app:todos";
@@ -47,8 +48,11 @@ export function getServerSnapshot(): Todo[] {
   return EMPTY_TODOS;
 }
 
-export function addTodo(text: string) {
-  persistAndNotify([{ id: crypto.randomUUID(), text, completed: false }, ...todos]);
+export function addTodo(text: string, dueDate?: string) {
+  persistAndNotify([
+    { id: crypto.randomUUID(), text, completed: false, ...(dueDate ? { dueDate } : {}) },
+    ...todos,
+  ]);
 }
 
 export function toggleTodo(id: string) {
